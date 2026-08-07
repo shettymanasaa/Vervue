@@ -1,0 +1,7 @@
+POST http://localhost:5000/api/interview
+Content-Type: application/json
+
+{
+    "sessionId": "session-1",
+    "candidateId": "CAND-001"
+}
