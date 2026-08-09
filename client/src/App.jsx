@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import "./App.css";
-
-const API_URL = "https://vervue-api.vercel.app/";
+const API_URL = "https://vervue-api.vercel.app";
 
 function App() {
   const [theme, setTheme] = useState(
