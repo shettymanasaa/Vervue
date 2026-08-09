@@ -22,6 +22,7 @@ function App() {
   const [submittingAnswer, setSubmittingAnswer] = useState(false);
 const [questionNumber, setQuestionNumber] = useState(1);
 const [feedback, setFeedback] = useState(null);
+const [interviewHistory, setInterviewHistory] = useState([]);
   const TOTAL_QUESTIONS = 10;
 
   useEffect(() => {
@@ -80,6 +81,7 @@ setQuestion("");
 setAnswer("");
 setQuestionNumber(1);
 setFeedback(null);
+setInterviewHistory([]);
 
     try {
       const response = await fetch(`${API_URL}/api/interview`, {
@@ -132,10 +134,17 @@ setFeedback(null);
     if (!response.ok) {
       throw new Error(data.error || "Failed to submit answer");
     }
+ setInterviewHistory((prev) => [
+  ...prev,
+  {
+    question,
+    answer: answer.trim(),
+  },
+]);
 
     if (data.done) {
       setFeedback(data.feedback);
-      setPage("feedback");
+      setPage("transcript");
       setAnswer("");
       return;
     }
@@ -169,7 +178,7 @@ setFeedback(null);
       <nav className="navbar">
         <div className="brand">
           <span className="brand-mark">AI</span>
-          <span>Interview Agent</span>
+          <span>Vervue</span>
         </div>
 
         <select
@@ -362,7 +371,7 @@ setSessionId(null);
             </button>
 
             <span className="question-count">
-  Question {questionNumber} of {TOTAL_QUESTIONS}
+  Question {questionNumber} of 11
 </span>
           </div>
 
@@ -392,7 +401,7 @@ setSessionId(null);
                 <div className="progress-label">
                   <span>Interview Progress</span>
                 <span>
-  {questionNumber} / {TOTAL_QUESTIONS}
+  {questionNumber} / 11
 </span>
                 </div>
 
@@ -400,8 +409,8 @@ setSessionId(null);
   <div
     className="progress-fill"
     style={{
-      width: `${(questionNumber / TOTAL_QUESTIONS) * 100}%`,
-    }}
+  width: `${Math.min((questionNumber / 11) * 100, 100)}%`,
+}}
   ></div>
 </div>
               </div>
@@ -447,6 +456,64 @@ setSessionId(null);
           </div>
         </main>
       )}
+      {/* INTERVIEW TRANSCRIPT */}
+{page === "transcript" && selectedCandidate && (
+  <main className="transcript-page">
+    <div className="transcript-header">
+      <p className="eyebrow">INTERVIEW COMPLETE</p>
+
+      <h1>Interview Transcript</h1>
+
+      <p className="page-description">
+        Review the questions and answers from {selectedCandidate.member.name}'s
+        interview.
+      </p>
+    </div>
+
+    <div className="transcript-list">
+      {interviewHistory.map((item, index) => (
+        <section className="transcript-item" key={index}>
+          <span className="transcript-number">
+            Question {index + 1}
+          </span>
+
+          <h2>{item.question}</h2>
+
+          <div className="transcript-answer">
+            <span>Your Answer</span>
+            <p>{item.answer}</p>
+          </div>
+        </section>
+      ))}
+    </div>
+
+    <div className="transcript-actions">
+      <button
+        className="primary-button"
+        onClick={() => setPage("feedback")}
+      >
+        View Feedback
+      </button>
+
+      <button
+        className="secondary-button"
+        onClick={() => {
+          setPage("home");
+          setSelectedCandidate(null);
+          setSessionId(null);
+          setQuestion("");
+          setAnswer("");
+          setFeedback(null);
+          setInterviewHistory([]);
+          setQuestionNumber(1);
+          setError("");
+        }}
+      >
+        Back to Home
+      </button>
+    </div>
+  </main>
+)}
             {/* FEEDBACK SCREEN */}
       {page === "feedback" && feedback && selectedCandidate && (
         <main className="feedback-page">
@@ -514,38 +581,30 @@ setSessionId(null);
 
           {/* ACTIONS */}
           <div className="feedback-actions">
-            <button
-              className="primary-button"
-              onClick={() => {
-                setPage("candidates");
-                setSelectedCandidate(null);
-                setSessionId(null);
-                setQuestion("");
-                setAnswer("");
-                setFeedback(null);
-                setQuestionNumber(1);
-                setError("");
-              }}
-            >
-              Start Another Interview
-            </button>
+  <button
+    className="primary-button"
+    onClick={() => {
+      setPage("candidates");
+      setSelectedCandidate(null);
+      setSessionId(null);
+      setQuestion("");
+      setAnswer("");
+      setFeedback(null);
+      setInterviewHistory([]);
+      setQuestionNumber(1);
+      setError("");
+    }}
+  >
+    Start Another Interview
+  </button>
 
-            <button
-              className="secondary-button"
-              onClick={() => {
-                setPage("home");
-                setSelectedCandidate(null);
-                setSessionId(null);
-                setQuestion("");
-                setAnswer("");
-                setFeedback(null);
-                setQuestionNumber(1);
-                setError("");
-              }}
-            >
-              Back to Home
-            </button>
-          </div>
+  <button
+    className="secondary-button"
+    onClick={() => setPage("transcript")}
+  >
+    Back to Transcript
+  </button>
+</div>
         </main>
       )}
     </div>
