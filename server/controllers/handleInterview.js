@@ -37,7 +37,7 @@ function getCurriculumDays(context, curriculum) {
 
 const handleInterview = async (req, res) => {
   try {
-    const { sessionId, candidateId, message } = req.body;
+   const { sessionId, candidateId, message, endInterview } = req.body;
 
     if (!sessionId) {
       return res.status(400).json({
@@ -95,6 +95,8 @@ const handleInterview = async (req, res) => {
         history: [],
         curriculumDays,
         coveredDays: [firstTargetMission.day],
+        // Interview timing
+  startedAt: new Date().toISOString(),
       };
 
       return res.json({
@@ -108,12 +110,90 @@ const handleInterview = async (req, res) => {
     // ==========================================
 
     const session = sessions[sessionId];
+    const completedAt = new Date().toISOString();
+
+const durationMs =
+  new Date(completedAt).getTime() -
+  new Date(session.startedAt).getTime();
+
+const durationSeconds = Math.max(
+  0,
+  Math.floor(durationMs / 1000)
+);
 
     if (!session) {
       return res.status(404).json({
         error: "Interview session not found",
       });
     }
+    if (endInterview) {
+  const feedbackText = await generateInterviewFeedback(
+    session.context,
+    session.history
+  );
+
+  let feedback;
+
+  try {
+    feedback = JSON.parse(feedbackText);
+  } catch (error) {
+    feedback = {
+      summary: feedbackText,
+      strengths: [],
+      gaps: [],
+      next: [],
+    };
+  }
+
+  delete sessions[sessionId];
+
+  return res.json({
+    reply: "Interview ended.",
+    done: true,
+    feedback,
+    incomplete: true,
+    answeredQuestions: session.history.length,
+    totalQuestions: TOTAL_QUESTIONS,
+      startedAt: session.startedAt,
+  completedAt,
+  durationSeconds,
+  status: "completed_early",
+  });
+}
+    if (endInterview) {
+  const feedbackText = await generateInterviewFeedback(
+    session.context,
+    session.history
+  );
+
+  let feedback;
+
+  try {
+    feedback = JSON.parse(feedbackText);
+  } catch (error) {
+    feedback = {
+      summary: feedbackText,
+      strengths: [],
+      gaps: [],
+      next: [],
+    };
+  }
+
+  delete sessions[sessionId];
+
+  return res.json({
+    reply: "Interview ended.",
+    done: true,
+    feedback,
+    incomplete: true,
+    answeredQuestions: session.history.length,
+    totalQuestions: TOTAL_QUESTIONS,
+      startedAt: session.startedAt,
+  completedAt,
+  durationSeconds,
+  status: "completed_early",
+  });
+}
 
     if (!message || !message.trim()) {
       return res.status(400).json({
@@ -132,7 +212,7 @@ const handleInterview = async (req, res) => {
     // FINISH AFTER QUESTION 10
     // ==========================================
 
-    if (session.questionNumber > TOTAL_QUESTIONS) {
+    if (session.questionNumber > TOTAL_QUESTIONS || session.questionNumber === 10) {
   const feedbackText = await generateInterviewFeedback(
     session.context,
     session.history
@@ -159,6 +239,12 @@ const handleInterview = async (req, res) => {
     reply: "Interview completed.",
     done: true,
     feedback,
+    startedAt: session.startedAt,
+  completedAt,
+  durationSeconds,
+  status: "completed",
+  answeredQuestions: session.history.length,
+  totalQuestions: TOTAL_QUESTIONS,
   });
 }
     // ==========================================

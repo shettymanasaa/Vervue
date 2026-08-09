@@ -1,59 +1,69 @@
 # Vervue
 
-Vervue is an AI-powered personalized interview platform that conducts
-candidate-specific technical interviews and provides an interview transcript
-and AI-generated feedback.
+Vervue is an AI-powered technical interview platform that conducts
+personalized, role-specific interviews and generates structured candidate
+assessments.
 
-## Features
+Instead of relying on a fixed questionnaire, Vervue uses the candidate's
+previous responses as context for generating subsequent interview questions.
 
-- Candidate selection
-- Personalized interview questions
-- Adaptive follow-up questions
+## Key Features
+
+- Candidate selection and profile-based interviews
+- Role-specific technical questions
+- Adaptive AI-generated follow-up questions
 - AI-powered interview evaluation
 - Complete interview transcript
-- Candidate feedback
-- Light and dark themes
+- Overall candidate assessment
+- Strengths and areas for improvement
+- Recommended next steps
+- Topic-wise performance analysis
+- Interview date and duration tracking
+- Completed and early-completed interview support
+- Light, dark, and system themes
 - Production deployment
 
 ## Interview Flow
 
-Home → Candidate Selection → Interview → Transcript → Feedback
+Home
+→ Candidate Selection
+→ Technical Interview
+→ Transcript
+→ AI Feedback
+→ Topic-wise Performance
+
+## How Vervue Works
+
+1. Select a candidate
+2. Start a personalized technical interview
+3. Candidate answers each technical question
+4. The AI uses previous responses as context for subsequent questions
+5. The interview can be completed normally or ended early
+6. The completed transcript is preserved
+7. AI-generated feedback evaluates the interview
+8. The feedback includes strengths, gaps, recommendations, and
+   topic-wise performance
 
 ## Tech Stack
 
 ### Frontend
+
 - React
 - Vite
 - CSS
 
 ### Backend
-- Python / FastAPI
+
+- Node.js
+- REST API
 - AI/LLM integration
 
 ### Deployment
+
 - Vercel
-
-## Live Demo
-
-https://vervue-eta.vercel.app/
-
-## AI Usage
-
-Vervue was developed iteratively with AI assistance for planning,
-implementation, debugging, UI iteration, prompt refinement, and deployment.
-
-See [PROMPTS.md](./PROMPTS.md) for the AI usage log and
-[AI_CHAT_TRANSCRIPT.md](./AI_CHAT_TRANSCRIPT.md) for the development record.
 
 ## Project Structure
 
 ```text
 client/   → React + Vite frontend
-server/   → Backend and AI interview logic
-
-## Future Scope
-
-Persistent database
-More candidate data sources
-Advanced interview analytics
-Expanded evaluation metrics
+server/   → Node.js backend and AI interview logic

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
-const API_URL = "https://vervue-api.vercel.app";
+const API_URL = "https://vervue-api.vercel.app/";
 
 function App() {
   const [theme, setTheme] = useState(
@@ -23,6 +23,13 @@ function App() {
 const [questionNumber, setQuestionNumber] = useState(1);
 const [feedback, setFeedback] = useState(null);
 const [interviewHistory, setInterviewHistory] = useState([]);
+const [interviewMeta, setInterviewMeta] = useState({
+  startedAt: null,
+  completedAt: null,
+  durationSeconds: 0,
+  status: null,
+});
+
   const TOTAL_QUESTIONS = 10;
 
   useEffect(() => {
@@ -96,8 +103,9 @@ setInterviewHistory([]);
       });
 
       if (!response.ok) {
-        throw new Error("Failed to start interview");
-      }
+  const errorData = await response.json();
+  throw new Error(errorData.error || "Failed to start interview");
+}
 
       const data = await response.json();
 
@@ -142,12 +150,20 @@ setInterviewHistory([]);
   },
 ]);
 
-    if (data.done) {
-      setFeedback(data.feedback);
-      setPage("transcript");
-      setAnswer("");
-      return;
-    }
+   if (data.done) {
+  setFeedback(data.feedback);
+
+  setInterviewMeta({
+    startedAt: data.startedAt,
+    completedAt: data.completedAt,
+    durationSeconds: data.durationSeconds || 0,
+    status: data.status || "completed",
+  });
+
+  setPage("transcript");
+  setAnswer("");
+  return;
+}
 
     setQuestion(data.reply);
 setAnswer("");
@@ -160,8 +176,53 @@ setFeedback(null);
     );
   } finally {
     setSubmittingAnswer(false);
+  }};
+    const endInterview = async () => {
+  if (!sessionId) return;
+
+  const confirmed = window.confirm(
+    `End interview now? Your ${questionNumber - 1} completed responses will be used for a partial assessment.`
+  );
+
+  if (!confirmed) return;
+
+  setError("");
+
+  try {
+    const response = await fetch(`${API_URL}/api/interview`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sessionId,
+        endInterview: true,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to end interview");
+    }
+
+    setFeedback(data.feedback);
+
+setInterviewMeta({
+  startedAt: data.startedAt,
+  completedAt: data.completedAt,
+  durationSeconds: data.durationSeconds || 0,
+  status: data.status || "completed_early",
+});
+
+setPage("feedback");
+setAnswer("");
+  } catch (error) {
+    console.error(error);
+    setError(error.message || "Unable to end the interview.");
   }
 };
+  
 
   const filteredCandidates = candidates.filter((candidate) => {
     const search = searchTerm.toLowerCase().trim();
@@ -172,7 +233,28 @@ setFeedback(null);
       candidate.member.id.toLowerCase().includes(search)
     );
   });
+const formatDuration = (seconds) => {
+  const totalSeconds = Math.max(0, Number(seconds) || 0);
 
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (minutes === 0) {
+    return `${remainingSeconds}s`;
+  }
+
+  return `${minutes}m ${String(remainingSeconds).padStart(2, "0")}s`;
+};
+
+const formatInterviewDate = (dateString) => {
+  if (!dateString) return "—";
+
+  return new Date(dateString).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+};
   return (
     <div className="app">
       <nav className="navbar">
@@ -194,32 +276,190 @@ setFeedback(null);
       </nav>
 
       {/* LANDING PAGE */}
-      {page === "home" && (
-        <main className="hero">
-          <div className="hero-content">
-            <p className="eyebrow">AI-POWERED INTERVIEW PLATFORM</p>
+     {/* LANDING PAGE */}
+{page === "home" && (
+  <main className="home-page">
 
-            <h1>
-              Technical interviews,
-              <br />
-              built around the candidate.
-            </h1>
+    {/* HERO */}
+    <section className="hero">
+      <div className="hero-content">
+        <p className="eyebrow">AI-POWERED INTERVIEW PLATFORM</p>
 
-            <p className="hero-description">
-              Conduct personalized technical interviews using candidate
-              profiles, learning history, and AI-generated questions.
+        <h1>
+          Technical interviews,
+          <br />
+          built around the candidate.
+        </h1>
+
+        <p className="hero-description">
+          Vervue conducts personalized technical interviews with
+          adaptive AI questioning and structured candidate feedback.
+        </p>
+
+        <button
+          className="primary-button"
+          onClick={openCandidateSelection}
+        >
+          Start an Interview
+        </button>
+      </div>
+    </section>
+
+    {/* WHAT IS VERVUE? */}
+    <section className="home-section">
+      <div className="home-section-content">
+        <p className="eyebrow">WHAT IS VERVUE?</p>
+
+        <h2>Technical interviews that adapt to the candidate.</h2>
+
+        <p>
+          Vervue is an AI-powered technical interview platform designed
+          to evaluate candidates through personalized, role-relevant
+          conversations rather than a fixed list of questions.
+        </p>
+      </div>
+    </section>
+
+    {/* WHO IS IT FOR? */}
+    <section className="home-section">
+      <div className="home-section-content">
+        <p className="eyebrow">WHO IS IT FOR?</p>
+
+        <h2>Built for better technical evaluation.</h2>
+
+        <div className="home-two-column">
+          <div className="home-info-card">
+            <h3>Interviewers & Recruiters</h3>
+            <p>
+              Conduct structured technical interviews and review
+              AI-generated assessments based on candidate responses.
             </p>
-
-            <button
-              className="primary-button"
-              onClick={openCandidateSelection}
-            >
-              Start an Interview
-            </button>
           </div>
-        </main>
-      )}
 
+          <div className="home-info-card">
+            <h3>Candidates</h3>
+            <p>
+              Experience a realistic technical interview that responds
+              to your demonstrated knowledge and technical depth.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* WHAT DOES IT DO? */}
+    <section className="home-section">
+      <div className="home-section-content">
+        <p className="eyebrow">WHAT DOES IT DO?</p>
+
+        <h2>From interview to structured assessment.</h2>
+
+        <div className="home-feature-grid">
+          <div className="home-info-card">
+            <span className="home-card-number">01</span>
+            <h3>Role-Specific Questions</h3>
+            <p>
+              Questions are generated around the candidate's role,
+              experience, and technical areas being evaluated.
+            </p>
+          </div>
+
+          <div className="home-info-card">
+            <span className="home-card-number">02</span>
+            <h3>Adaptive Interviewing</h3>
+            <p>
+              The interview uses previous responses as context for
+              generating subsequent questions.
+            </p>
+          </div>
+
+          <div className="home-info-card">
+            <span className="home-card-number">03</span>
+            <h3>AI-Powered Feedback</h3>
+            <p>
+              Completed interviews produce structured summaries,
+              strengths, gaps, and recommended next steps.
+            </p>
+          </div>
+
+          <div className="home-info-card">
+            <span className="home-card-number">04</span>
+            <h3>Topic-Wise Analysis</h3>
+            <p>
+              Candidate performance can be reviewed across the major
+              technical topics assessed during the interview.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* HOW IT WORKS */}
+    <section className="home-section">
+      <div className="home-section-content">
+        <p className="eyebrow">HOW IT WORKS</p>
+
+        <h2>A simple interview workflow.</h2>
+
+        <div className="home-process">
+          <div className="home-process-step">
+            <span>01</span>
+            <h3>Select</h3>
+            <p>Select the candidate you want to interview.</p>
+          </div>
+
+          <div className="home-process-step">
+            <span>02</span>
+            <h3>Interview</h3>
+            <p>Conduct a role-specific technical interview.</p>
+          </div>
+
+          <div className="home-process-step">
+            <span>03</span>
+            <h3>Adapt</h3>
+            <p>Questions respond to the candidate's previous answers.</p>
+          </div>
+
+          <div className="home-process-step">
+            <span>04</span>
+            <h3>Assess</h3>
+            <p>Review structured AI-generated feedback.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* WHY IS IT USEFUL? */}
+    <section className="home-section home-benefits">
+      <div className="home-section-content">
+        <p className="eyebrow">WHY VERVUE?</p>
+
+        <h2>More than a fixed questionnaire.</h2>
+
+        <p>
+          Vervue brings the interview, candidate responses, transcript,
+          and structured assessment into one workflow—helping interviewers
+          evaluate technical understanding more consistently.
+        </p>
+      </div>
+    </section>
+
+    {/* FINAL CTA */}
+    <section className="home-cta">
+      <p className="eyebrow">READY TO START?</p>
+
+      <h2>Conduct your next technical interview with Vervue.</h2>
+
+      <button
+        className="primary-button"
+        onClick={openCandidateSelection}
+      >
+        Start an Interview
+      </button>
+    </section>
+
+  </main>
+)}
       {/* CANDIDATE SELECTION */}
       {page === "candidates" && (
         <main className="candidate-page">
@@ -443,14 +683,22 @@ setSessionId(null);
                 />
 
                 <div className="answer-actions">
-                  <button
-  className="primary-button"
-  onClick={submitAnswer}
-  disabled={submittingAnswer || !answer.trim()}
->
-  {submittingAnswer ? "Submitting..." : "Submit Answer"}
-</button>
-                </div>
+  <button
+    className="primary-button"
+    onClick={submitAnswer}
+    disabled={submittingAnswer || !answer.trim()}
+  >
+    {submittingAnswer ? "Submitting..." : "Submit Answer"}
+  </button>
+
+  <button
+    className="secondary-button"
+    onClick={endInterview}
+    disabled={submittingAnswer}
+  >
+    End Interview
+  </button>
+</div>
               </div>
             </section>
           </div>
@@ -527,6 +775,30 @@ setSessionId(null);
               interview performance.
             </p>
           </div>
+          <div className="feedback-meta">
+  <div className="feedback-meta-item">
+    <span className="feedback-meta-label">DATE</span>
+    <strong>
+      {formatInterviewDate(interviewMeta.completedAt)}
+    </strong>
+  </div>
+
+  <div className="feedback-meta-item">
+    <span className="feedback-meta-label">TIME TAKEN</span>
+    <strong>
+      {formatDuration(interviewMeta.durationSeconds)}
+    </strong>
+  </div>
+
+  <div className="feedback-meta-item">
+    <span className="feedback-meta-label">STATUS</span>
+    <strong>
+      {interviewMeta.status === "completed_early"
+        ? "Completed Early"
+        : "Completed"}
+    </strong>
+  </div>
+</div>
 
           {/* SUMMARY */}
           <section className="feedback-section">
@@ -578,6 +850,39 @@ setSessionId(null);
               <p>No additional recommendations.</p>
             )}
           </section>
+          {feedback.topicAnalysis?.length > 0 && (
+  <section className="feedback-section topic-analysis-section">
+    <h2>Topic-wise Performance</h2>
+
+    <div className="topic-analysis-grid">
+      {feedback.topicAnalysis.map((topic, index) => (
+        <div className="topic-analysis-card" key={index}>
+          <div className="topic-analysis-header">
+            <h3>{topic.topic}</h3>
+
+            <span
+              className={`topic-assessment ${String(
+                topic.assessment
+              ).toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              {topic.assessment}
+            </span>
+          </div>
+
+          <div className="topic-analysis-block">
+            <span>Evidence</span>
+            <p>{topic.evidence}</p>
+          </div>
+
+          <div className="topic-analysis-block">
+            <span>Improvement</span>
+            <p>{topic.improvement}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+)}
 
           {/* ACTIONS */}
           <div className="feedback-actions">

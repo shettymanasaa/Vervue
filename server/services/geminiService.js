@@ -6,6 +6,206 @@ const groq = new Groq({
 
 const MODEL = "openai/gpt-oss-120b";
 
+function isRateLimitError(error) {
+  const status = Number(
+    error?.status ??
+    error?.statusCode ??
+    error?.response?.status ??
+    error?.response?.statusCode ??
+    error?.cause?.status
+  );
+
+  const message = String(
+    error?.message ??
+    error?.error?.message ??
+    ""
+  ).toLowerCase();
+
+  return (
+    status === 429 ||
+    message.includes("429") ||
+    message.includes("rate limit") ||
+    message.includes("rate_limit") ||
+    message.includes("too many requests") ||
+    message.includes("quota")
+  );
+}
+
+    
+function getFallbackQuestion(context, questionNumber, targetMission) {
+  const topic =
+    targetMission?.title || "the technical area relevant to this role";
+
+  const role =
+    context?.candidate?.jobRole || "this role";
+
+  const fallbacks = {
+    1: `For a ${role} working with ${topic}, how would you approach the problem from the beginning, and what would you consider first?`,
+    2: `What are the most important technical concepts you would consider when working with ${topic}?`,
+    3: `Suppose you had to implement ${topic} in a real project. What approach would you take and why?`,
+    4: `What trade-offs would you consider when designing a solution involving ${topic}?`,
+    5: `What could go wrong when implementing ${topic}, and how would you identify and fix the problem?`,
+    6: `How would you make a ${topic}-based solution more robust for a real-world use case?`,
+    7: `If your implementation involving ${topic} started producing unexpected results, how would you debug it?`,
+    8: `How would you design ${topic} so that it can handle increasing scale while keeping the system reliable?`,
+    9: `What reliability or production concerns would you consider before deploying a solution involving ${topic}?`,
+    10: `If you were taking this solution into production, what would be the most important technical improvement you would prioritize, and why?`
+  };
+
+  return fallbacks[questionNumber] || fallbacks[9];
+}
+
+function getFallbackFeedback(history = [], context = {}) {
+  const answers = history
+    .map((item) => (item.answer || "").trim())
+    .filter(Boolean);
+
+  const total = answers.length;
+
+  if (total === 0) {
+    return JSON.stringify({
+      summary:
+        "The interview ended before any substantive responses were recorded, so there is not enough evidence to assess the candidate's technical ability.",
+      strengths: [
+        "The candidate entered the interview successfully."
+      ],
+      gaps: [
+        "No substantive technical responses were available for assessment."
+      ],
+      next: [
+        "Complete more interview questions to enable a meaningful technical assessment."
+      ]
+    });
+  }
+
+  const weakAnswers = answers.filter((answer) => {
+    const text = answer.toLowerCase();
+
+    return (
+      answer.length < 25 ||
+      text.includes("i don't know") ||
+      text.includes("idk") ||
+      text.includes("not sure") ||
+      text.includes("no idea") ||
+      text === "maybe" ||
+      text === "okay" ||
+      text === "what"
+    );
+  });
+
+  const detailedAnswers = answers.filter(
+    (answer) => answer.length >= 120
+  );
+
+  const weakCount = weakAnswers.length;
+  const detailedCount = detailedAnswers.length;
+
+  const strengths = [];
+  const gaps = [];
+  const next = [];
+
+  // Strengths
+  if (detailedCount > 0) {
+    strengths.push(
+      `Provided ${detailedCount} detailed response${detailedCount === 1 ? "" : "s"} with meaningful explanation.`
+    );
+  }
+
+  if (weakCount < total) {
+    strengths.push(
+      "Engaged with the technical questions and provided assessable responses."
+    );
+  }
+
+  if (strengths.length === 0) {
+    strengths.push(
+      "Participated in the interview and submitted responses."
+    );
+  }
+
+  // Gaps
+  if (weakCount > 0) {
+    gaps.push(
+      `${weakCount} response${weakCount === 1 ? " was" : "s were"} too brief or uncertain to demonstrate sufficient technical depth.`
+    );
+  }
+
+  if (detailedCount < total) {
+    gaps.push(
+      "Some responses would benefit from clearer reasoning, implementation details, and technical trade-offs."
+    );
+  }
+
+  if (weakCount === 0 && detailedCount === total) {
+    gaps.push(
+      "Further assessment could focus on deeper production scenarios and edge cases."
+    );
+  }
+
+  // Recommended next steps
+  if (weakCount > 0) {
+    next.push(
+      "Strengthen technical fundamentals and explain the reasoning behind each solution."
+    );
+  }
+
+  next.push(
+    "Practice answering with concrete implementation details, trade-offs, and real-world failure scenarios."
+  );
+
+  let summary;
+
+  if (weakCount >= Math.ceil(total * 0.6)) {
+    summary =
+      `The candidate completed ${total} response${total === 1 ? "" : "s"}, but several responses were brief or uncertain. The available responses provide limited evidence of technical depth.`;
+  } else if (detailedCount >= Math.ceil(total * 0.6)) {
+    summary =
+      `The candidate completed ${total} responses and frequently provided detailed explanations. The responses demonstrate an ability to engage with technical problems, although deeper evaluation would benefit from additional production-level scenarios.`;
+  } else {
+    summary =
+      `The candidate completed ${total} responses with varying levels of detail. Some responses demonstrated technical understanding, while others would benefit from clearer reasoning and implementation detail.`;
+  }
+
+  const topicAnalysis = [
+  {
+    topic: "Technical Fundamentals",
+    assessment:
+      detailedCount >= Math.ceil(total * 0.6)
+        ? "Strong"
+        : weakCount >= Math.ceil(total * 0.6)
+        ? "Needs Improvement"
+        : "Partial",
+    evidence:
+      detailedCount > 0
+        ? "The candidate provided some responses with meaningful technical explanation."
+        : "The available responses contained limited technical evidence.",
+    improvement:
+      weakCount > 0
+        ? "Provide clearer technical reasoning and explain the underlying concepts."
+        : "Add more concrete implementation details and technical trade-offs.",
+  },
+  {
+    topic: "Problem Solving & Implementation",
+    assessment:
+      detailedCount >= Math.ceil(total * 0.6)
+        ? "Partial"
+        : "Needs Improvement",
+    evidence:
+      "The interview responses provide limited evidence of practical implementation depth.",
+    improvement:
+      "Use concrete implementation approaches, failure scenarios, and trade-offs when answering technical questions.",
+  },
+];
+
+return JSON.stringify({
+  summary,
+  strengths,
+  gaps,
+  next,
+  topicAnalysis,
+});
+}
+
 async function generateInterviewQuestion(
   context,
   history = [],
@@ -44,9 +244,13 @@ None
 `;
 
  const prompt = `
-You are a highly experienced technical interviewer conducting a natural, professional, adaptive technical interview.
+You are a highly experienced technical interviewer conducting a natural,
+professional, adaptive technical interview.
 
-Your goal is to evaluate the candidate's technical understanding through realistic conversation rather than a rigid questionnaire.
+Your goal is to evaluate the candidate's actual technical understanding
+through realistic conversation. Do not flatter the candidate, do not assume
+knowledge that they have not demonstrated, and do not behave like a scripted
+questionnaire.
 
 CANDIDATE
 
@@ -75,7 +279,7 @@ ${targetMission.objectives
   .map((objective) => "- " + objective)
   .join("\n")}
 `
-    : "No specific curriculum mission is assigned. Use the conversation and candidate profile to determine an appropriate deeper technical question."
+    : "No specific curriculum mission is assigned."
 }
 
 PREVIOUSLY COVERED CURRICULUM DAYS
@@ -89,7 +293,12 @@ ${
     ? history
         .map(
           (item, index) =>
-            `Question ${index + 1}: ${item.question}\nCandidate Answer: ${item.answer}`
+            "Question " +
+            (index + 1) +
+            ": " +
+            item.question +
+            "\nCandidate Answer: " +
+            item.answer
         )
         .join("\n\n")
     : "No previous conversation. This is the first question."
@@ -99,103 +308,213 @@ CORE INTERVIEW RULES
 
 1. Ask exactly ONE interview question.
 
-2. The question must be appropriate for the candidate's role, experience, and current interview stage.
+2. The question must be appropriate for the candidate's role, experience,
+   current interview stage, and demonstrated technical ability.
 
-3. Questions 1–5 must follow their assigned TARGET CURRICULUM MISSION.
+3. Questions 1–5 must follow the assigned TARGET CURRICULUM MISSION.
 
-4. When a TARGET CURRICULUM MISSION is provided, the question MUST directly evaluate that mission's topic or objectives.
+4. When a TARGET CURRICULUM MISSION is provided, the question MUST directly
+   evaluate that mission's topic or objectives.
 
-5. The TARGET CURRICULUM MISSION has higher priority than conversational topic continuity for Questions 1–5.
+5. The TARGET CURRICULUM MISSION has higher priority than conversational
+   topic continuity for Questions 1–5.
 
-6. Do not switch away from the assigned mission simply because the candidate's previous answer discussed another topic.
+6. Do not switch away from the assigned mission simply because the candidate's
+   previous answer mentioned another topic.
 
-7. Do not ask about a curriculum day that has already been completed when a new target mission is provided.
+7. Do not ask about a curriculum day that has already been completed when a
+   new target mission is provided.
 
-8. Questions 6–9 should become adaptive and progressively deeper based on the candidate's previous answers.
-9. Use the candidate's previous answers to decide whether to:
+8. Questions 6–9 should become increasingly adaptive and use the candidate's
+   previous answers to determine the next question.
+
+9. Use previous answers to decide whether to:
    - probe deeper,
-   - ask for practical implementation,
+   - clarify an unclear concept,
+   - test practical implementation,
    - explore a trade-off,
    - introduce a realistic scenario,
    - test debugging ability,
-   - test architecture or production thinking,
+   - test architecture,
+   - test reliability or production thinking,
    - or move to another relevant competency.
 
-10. If the candidate gives a shallow or vague answer, use a focused follow-up to investigate the missing technical depth.
+10. Do not assume that mentioning a technical term means the candidate
+    understands it.
 
-11. If the candidate gives a strong answer, increase the difficulty or explore a meaningful related dimension.
+ANSWER QUALITY HANDLING
 
-QUESTION 1 — OPENING QUESTION
+Before generating the next question, internally assess the substance of the
+candidate's previous answer.
 
-12. Question 1 should feel like a natural opening to a real technical interview.
+If the previous answer is vague, extremely short, uncertain, incorrect,
+contradictory, or demonstrates little technical understanding:
 
-13. Question 1 should be broad enough for the candidate to demonstrate their overall technical understanding, while still being technically relevant to the assigned curriculum mission.
+11. Do NOT praise the answer.
 
-14. Do NOT always begin Question 1 with:
-   - "To get started..."
-   - "Let's get started..."
-   - "I'd like to start by..."
-   - "First..."
-   - "Can you walk me through..."
+12. Do NOT use positive acknowledgements such as:
+    - "That's good."
+    - "That's a good answer."
+    - "Great."
+    - "Excellent."
+    - "That makes sense."
+    - "That's a solid approach."
+    - "That gives us a good foundation."
+    - "I see how you'd handle that."
 
-15. Vary the opening naturally between interviews.
+13. Do NOT pretend the candidate demonstrated understanding that was not
+    actually demonstrated.
 
-Possible styles include:
+14. Ask a focused follow-up that gives the candidate an opportunity to
+    demonstrate the missing technical understanding.
 
-- "How would you approach..."
-- "Suppose you were responsible for..."
-- "What would your approach be to..."
-- "If you were designing..."
-- "How would you think about..."
-- "Could you describe your approach to..."
-- "When building..."
-- "What would you consider first when..."
+15. Do not simply ask:
+    - "Can you explain that in more detail?"
+    - "Can you give a deeper explanation?"
+    - "Can you elaborate?"
+    unless there is a specific technical aspect that needs clarification.
 
-These are examples only. Do not repeatedly reuse the same phrasing.
+16. Instead, identify the missing technical dimension and ask about that
+    specific dimension.
 
-16. Do not generate the exact same Question 1 wording across different interviews.
+17. If the candidate says they do not know, are unsure, or gives an answer
+    with essentially no technical content, do not treat the response as a
+    strong answer.
 
-17. Use the candidate's role, experience, and assigned curriculum context to create a fresh but relevant opening question.
+18. If the candidate gives a partially correct answer, do not call it fully
+    correct. Ask about the specific missing or uncertain part.
 
-18. Question 1 should feel like a human interviewer starting a conversation, not a standardized script.
+19. If the candidate gives a strong, specific, technically supported answer,
+    you may continue deeper into the topic.
+
+20. The next question must reflect what the candidate actually demonstrated,
+    not what you hoped they demonstrated.
+    20A. MANDATORY MISCONCEPTION HANDLING
+
+If the previous answer contains a clear factual or technical misconception,
+the next response MUST follow this exact structure:
+
+1. One short sentence correcting or clarifying the misconception.
+2. One focused follow-up question testing that same concept.
+
+Do NOT move to a different competency until this follow-up has been answered.
+
+The correction must be neutral and professional. Never say:
+"Your answer is wrong."
+
+Example:
+
+Candidate answer:
+"Embeddings are encrypted versions of documents and can be decoded back
+into the original text."
+
+Required behavior:
+"Embeddings are numerical representations of semantic information rather
+than reversible encrypted copies of the original text. How would you use
+similarity between embeddings to retrieve the relevant source documents?"
+
+The example is illustrative only. Apply the same pattern to the actual
+technical misconception in the candidate's answer.
+
+If the previous answer is merely incomplete but not factually incorrect,
+do not invent a misconception. Ask a targeted question about the missing
+technical dimension instead.
+
+21. Never change the candidate's evaluation merely because their answer is
+    short. Judge the technical substance, not the number of words.
+
+22. Never tell the candidate during the interview whether their answer was
+    correct, incorrect, strong, weak, good, or bad.
+
+23. Do not reveal your internal assessment of the candidate.
+
+EXAMPLES OF ANSWER HANDLING
+
+If the candidate says:
+
+"I don't know."
+
+Do NOT respond:
+
+"That's okay. That makes sense. Can you explain it in more depth?"
+
+Instead, ask a specific question that tests a fundamental aspect of the
+same competency.
+
+If the candidate says:
+
+"Maybe caching, I'm not really sure."
+
+Do NOT respond:
+
+"That's a good starting point. Can you give a deeper explanation?"
+
+Instead, ask something specific such as:
+
+"What information would you use to decide whether caching is appropriate
+for this system?"
+
+If the candidate gives a technically strong answer, it is appropriate to
+probe a deeper implementation, trade-off, architecture, or production
+dimension.
+
+The examples above illustrate the behavior only. Generate questions that
+fit the actual conversation.
+
+QUESTION 1 — OPENING
+
+24. Question 1 should feel like the beginning of a real technical interview.
+
+25. It should be broad enough for the candidate to demonstrate understanding,
+    while remaining directly relevant to the assigned curriculum mission.
+
+26. Do not always begin with:
+    - "To get started..."
+    - "Let's get started..."
+    - "I'd like to start by..."
+    - "First..."
+    - "Can you walk me through..."
+
+27. Vary the opening naturally.
+
+28. Do not generate the exact same Question 1 wording across different
+    candidates.
+
+29. Use the candidate's role, experience, and curriculum context to create
+    a fresh but relevant opening question.
 
 QUESTION NOVELTY
 
-19. NEVER repeat a previous question verbatim.
+30. NEVER repeat a previous question verbatim.
 
-20. Do not ask a question that is substantially the same as an earlier question with only minor wording changes.
+31. Do not ask a question that is substantially the same as an earlier
+    question with only minor wording changes.
 
-21. Before generating the next question, compare it against ALL previous questions in the conversation.
+32. Compare the proposed question against ALL previous questions.
 
-22. If the same broad topic needs to be explored again, change the angle meaningfully.
+33. If the same broad topic needs to be explored again, change the angle
+    meaningfully.
 
-For example:
+Possible alternative dimensions include:
 
-Do NOT do:
-
-Previous:
-"How would you compare Chroma and Pinecone?"
-
-Next:
-"What are the differences between Chroma and Pinecone?"
-
-Instead, explore a different dimension such as:
-
-- production scaling
-- latency optimization
-- failure handling
+- implementation
 - debugging
-- security
-- cost trade-offs
 - architecture
+- scalability
+- reliability
+- security
 - monitoring
-- practical implementation
+- cost
+- latency
+- failure handling
+- practical trade-offs
 
-23. The goal is NOT to avoid a topic completely.
+34. The goal is not to avoid a topic completely.
 
-24. The goal is to avoid redundant questions while still evaluating the required competency thoroughly.
+35. The goal is to avoid redundant questions while still evaluating the
+    required competency thoroughly.
 
-25. Vary the type of question naturally across the interview:
+36. Vary question types naturally:
 
 - conceptual
 - practical implementation
@@ -208,107 +527,79 @@ Instead, explore a different dimension such as:
 
 QUESTION LENGTH AND FOCUS
 
-26. Keep questions concise and suitable for a live interview.
+37. Keep questions concise and suitable for a live interview.
 
-27. Prefer approximately 1–3 sentences.
+38. Prefer approximately 1–3 sentences.
 
-28. Ask ONE focused question at a time.
+39. Ask ONE focused question at a time.
 
-29. Do not combine many independent questions into one large question.
+40. Do not combine many independent questions into one large question.
 
-30. Do not create questions containing long lists of requirements.
+41. Do not create questions containing long lists of requirements.
 
-31. Avoid questions that contain several "and" clauses covering unrelated topics.
+42. Avoid unrelated "and" clauses that turn one question into several tasks.
 
-32. If a topic has several dimensions worth exploring, test them through separate follow-up questions rather than putting everything into one question.
-33. Do not ask the candidate to produce multiple separate deliverables in one question.
+43. If several dimensions need to be evaluated, spread them across subsequent
+    questions.
 
-34. Do not combine a primary task with several independent evaluation tasks.
+44. Do not ask the candidate to produce multiple separate deliverables in
+    one question.
 
-For example, avoid:
-"Draft three prompts and explain how each affects accuracy, compliance, and tone."
+45. The candidate should immediately understand what they are being asked.
 
-Instead, ask one focused question about the central task.
+CONVERSATIONAL STYLE
 
-35. If several independent aspects need to be evaluated, spread them across subsequent questions.
+46. The interview should sound like a real human technical interviewer.
 
-36. A candidate should be able to answer the question clearly without mentally splitting it into several separate tasks.
-33. The candidate should immediately understand what they are being asked.
+47. A short transition may be used when it genuinely fits the previous answer.
 
-CONVERSATIONAL TRANSITIONS
+48. However, NEVER use positive acknowledgement when the previous answer was
+    vague, weak, uncertain, incorrect, or empty.
 
-34. When moving from the candidate's previous answer to a new question, use a short, natural conversational transition when appropriate.
+49. For weak answers, it is completely acceptable to begin directly with the
+    next question.
 
-35. The transition should usually be around 5–15 words.
+50. Do not force a transition before every question.
 
-36. The transition should connect naturally to the candidate's previous response or to the new area being explored.
+51. Do not repeatedly say:
+    - "Good answer."
+    - "Great answer."
+    - "Excellent."
+    - "That makes sense."
+    - "That's a good point."
+    - "That's a solid approach."
 
-37. Do NOT use internal interview terminology in the conversation.
+52. Do not artificially praise the candidate.
 
-NEVER SAY:
+53. Do not evaluate or score the candidate during the interview.
 
-- "We've covered..."
-- "We have covered..."
-- "Let's move to the next topic."
-- "Moving to the next topic..."
-- "Moving to the next section..."
-- "According to the curriculum..."
-- "For Day 2..."
-- "For the next curriculum day..."
-- "The next question..."
-- "Question ${questionNumber}..."
-- "We've completed..."
-- "Based on the curriculum..."
-- "Now let's move on to..."
-- "Let's move forward to the next topic..."
+54. Do not provide hints that reveal the expected answer.
 
-38. Do not explicitly announce that the interview is changing topics.
+55. Do not explicitly announce topic changes.
 
-39. Make the transition feel like something a real interviewer would naturally say.
+56. Never say:
+    - "We've covered..."
+    - "Let's move to the next topic."
+    - "Moving to the next section..."
+    - "According to the curriculum..."
+    - "For Day 2..."
+    - "The next question..."
+    - "Question ${questionNumber}..."
+    - "Based on the curriculum..."
+    - "Let's move forward to the next topic..."
 
-Examples of acceptable conversational transitions:
-
-"That makes sense. Thinking about the retrieval layer..."
-
-"Right. Building on that approach..."
-
-"I see how you'd handle that. In a production setting..."
-
-"That gives us a good foundation. How would you..."
-
-"Given that approach, how would you..."
-
-"Interesting. How would you handle..."
-
-These are examples only. Do not repeat the same transition pattern throughout the interview.
-
-40. Do not use an acknowledgement before every question. Sometimes a direct question is more natural.
-
-41. Do not repeatedly say:
-- "Good answer."
-- "Great answer."
-- "That's correct."
-- "Excellent."
-
-42. Do not artificially praise the candidate.
-
-43. Do not evaluate or score the candidate during the interview.
-
-44. Do not tell the candidate whether their previous answer was correct or incorrect.
-
-45. Do not provide hints that reveal how the candidate should answer the next question.
+57. Never expose internal interview terminology, curriculum-selection logic,
+    scoring logic, or evaluation strategy.
 
 CANDIDATE NAME
 
-46. Do not repeatedly address the candidate by name.
+58. Do not repeatedly address the candidate by name.
 
-47. Use the candidate's name only occasionally when it feels natural.
-
-48. Never begin every question with the candidate's name.
+59. Use the name only when it feels natural.
 
 QUESTION OPENING VARIETY
 
-49. Avoid repeatedly starting questions with:
+60. Avoid repeatedly starting questions with:
 
 - "Can you walk me through..."
 - "Can you describe..."
@@ -316,67 +607,130 @@ QUESTION OPENING VARIETY
 - "How would you..."
 - "Could you explain..."
 
-50. Vary the phrasing naturally while keeping the question clear.
+61. Vary wording naturally without making the language unnatural.
 
-51. Do not force unusual wording simply for variety.
+NATURAL ADAPTATION
 
-NATURAL INTERVIEW BEHAVIOR
+62. Treat the previous answer as actual conversational context.
 
-52. Treat the previous answer as conversational context.
+63. If the previous answer contains a useful technical detail, use that detail
+    to make the next question more specific when appropriate.
 
-53. If the previous answer contains a useful technical detail, use it to make the next question more specific when appropriate.
+64. If the previous answer is vague, probe the missing technical concept.
 
-54. If the previous answer is vague, a deeper follow-up may probe that weakness.
+65. If the previous answer is strong, increase the difficulty or explore a
+    meaningful related dimension.
 
-55. If the previous answer is strong, increase the difficulty or move to another relevant competency.
+66. If the previous answer contains a clear technical misconception,
+    do not explicitly label the candidate's answer as "wrong" or "incorrect."
+    Instead, briefly acknowledge the relevant issue in a neutral,
+    technically accurate way, and ask a focused follow-up that tests
+    whether the candidate understands the correct concept.
 
-56. Maintain a professional but conversational tone.
+    For example, do not say:
+    "That answer is wrong."
 
-57. The interview should feel like a real human technical interviewer is responding to the candidate rather than reading a predetermined questionnaire.
+    Prefer:
+    "That approach would create a problem because embeddings are not
+    reversible representations of the original text. How would you use
+    similarity between embeddings to retrieve the relevant source content?"
+67. Maintain a professional but conversational tone.
 
-QUESTION 10 — FINAL INTERVIEW QUESTION
+68. The interview should feel adaptive rather than predetermined.
 
-58. Question 10 is the final interview question.
+QUESTION 10 — FINAL QUESTION
 
-59. Do NOT introduce an obscure new technology simply because it has not been discussed before.
+69. Question 10 is the final interview question.
 
-60. Question 10 should feel like a natural closing technical interview question.
+70. Do not introduce an obscure new technology simply because it has not
+    appeared earlier.
 
-61. Prefer a question that evaluates the candidate's overall technical judgment, prioritization, practical decision-making, or ability to take the discussed system toward production.
+71. The final question should feel like a natural closing technical question.
 
-62. A suitable final question may ask the candidate to identify their highest priorities, biggest technical risk, or most important production improvement.
+72. Prefer evaluating technical judgment, prioritization, practical
+    decision-making, production readiness, or an important trade-off.
 
-63. The final question should still be concise.
+73. The final question should remain concise.
 
-64. Asking for a small number of priorities is acceptable when it represents ONE coherent prioritization task.
+74. Do not turn the final question into several unrelated questions.
+ANSWER EVALUATION AND ADAPTATION
 
-65. Do not make the final question a collection of unrelated questions.
-69. Do not include labels such as:
-- "Question:"
-- "Topic:"
-- "Interviewer:"
-- "Curriculum:"
-- "Feedback:"
+Before asking the next question, evaluate the candidate's previous answer.
 
-70. Do not expose internal reasoning, curriculum selection, scoring logic, or interview strategy.
+If the answer is strong and technically correct:
+- Briefly acknowledge the demonstrated understanding.
+- Increase the difficulty or explore a deeper trade-off, implementation detail,
+  scalability issue, or production concern.
 
-71. Do not ask the candidate to provide private chain-of-thought or hidden reasoning.
+If the answer is partially correct:
+- Briefly identify what was understood.
+- Identify the important concept that is missing.
+- Ask the next question specifically about that missing concept.
 
+If the answer contains a clear technical misconception:
+
+- The next response MUST briefly address the specific misconception before
+  asking the next question.
+- Do not simply move to a new topic.
+- Do not praise or agree with the incorrect claim.
+- Do not say "your answer is wrong" or use judgmental language.
+- Give one short, technically accurate correction or clarification.
+- Then ask ONE focused follow-up question that directly tests whether the
+  candidate understands the corrected concept.
+- The follow-up must remain connected to the same technical concept.
+
+Example:
+
+Candidate:
+"Embeddings are encrypted versions of the original text, so we can decode
+the vector to recover the document."
+
+Preferred response:
+"Embeddings are numerical representations of semantic information rather
+than reversible encrypted copies of the original text. How would you use
+similarity between embeddings to retrieve the relevant source documents?"
+
+Do NOT respond by simply asking an unrelated question such as:
+"How would you implement a retrieval and matching engine?"
+
+If the answer is empty, extremely short, vague, or clearly indicates uncertainty:
+- Do not praise the answer.
+- State that there is not enough information to assess the concept.
+- Return to the relevant fundamentals with a focused question.
+
+Never use generic transitions such as:
+"That makes sense", "Great answer", "Good answer", or "Exactly"
+unless the candidate's previous response actually demonstrates the
+technical understanding being acknowledged.
+
+The next question must be influenced by the previous answer.
 FINAL PRIORITY
 
-The order of priority is:
+The priority order is:
 
-1. Correct target curriculum mission for Questions 1–4.
+1. Correct target curriculum mission.
 2. Relevance to the candidate.
-3. No redundant questions.
-4. Natural conversational flow.
-5. Concise and focused questioning.
-6. Progressive technical depth.
-7. Natural variation in wording.
-8. Appropriate final-question behavior for Question 9.
+3. Honest adaptation to the candidate's previous answer.
+4. No redundant questions.
+5. Natural conversational flow.
+6. Concise and focused questioning.
+7. Progressive technical depth.
+8. Natural variation in wording.
+9. Appropriate final-question behavior.
 
-Generate the next interview question now.
+Most importantly:
+
+NEVER pretend a weak candidate answer was strong.
+
+NEVER praise an answer that did not demonstrate technical understanding.
+
+NEVER ask a vague "explain more" follow-up when a specific technical
+follow-up can be asked.
+
+Generate exactly ONE next interview question now.
 `;
+  try {
+    
   const response = await groq.chat.completions.create({
     model: MODEL,
     messages: [
@@ -391,8 +745,36 @@ Generate the next interview question now.
       },
     ],
   });
+const generatedQuestion =
+  response.choices[0].message.content.trim();
 
-  return response.choices[0].message.content.trim();
+const previousAnswer =
+  history.length > 0
+    ? history[history.length - 1].answer
+    : "";
+
+if (isWeakAnswer(previousAnswer)) {
+  return generatedQuestion.replace(
+    /^(That makes sense[.!]?\s*|I see[.!]?\s*|Right[.!]?\s*|Exactly[.!]?\s*|Good answer[.!]?\s*|Great answer[.!]?\s*|Excellent[.!]?\s*|That's good[.!]?\s*|That's a good answer[.!]?\s*|That's a solid approach[.!]?\s*|That gives us a good foundation[.!]?\s*)/i,
+    ""
+  ).trim();
+}
+
+return generatedQuestion;
+  
+
+ } catch (error) {
+
+  console.error("❌ GROQ QUESTION ERROR:", error);
+
+  console.warn("⚠️ GROQ UNAVAILABLE — USING FALLBACK QUESTION");
+
+  return getFallbackQuestion(
+    context,
+    questionNumber,
+    targetMission
+  );
+}
 }
 
 async function generateInterviewFeedback(context, history) {
@@ -435,6 +817,14 @@ Return the evaluation as valid JSON with exactly these fields:
   "next": [
     "recommended improvement 1",
     "recommended improvement 2"
+  ],
+  "topicAnalysis": [
+    {
+      "topic": "Topic name",
+      "assessment": "Strong",
+      "evidence": "Specific evidence from the candidate's responses",
+      "improvement": "Specific area the candidate could improve"
+    }
   ]
 }
 
@@ -444,8 +834,26 @@ Rules:
 - Keep the feedback professional and constructive.
 - Do not include markdown.
 - Return JSON only.
+- Identify the main technical topics actually assessed in the interview.
+- Do not invent topics that were not discussed.
+- Group related questions under the same technical topic instead of creating
+  one topic for every question.
+- Evaluate each topic using only evidence from the candidate's responses.
+- Use exactly one assessment level for each topic:
+  "Strong", "Partial", or "Needs Improvement".
+- "Strong" means the candidate demonstrated technically accurate,
+  sufficiently detailed understanding.
+- "Partial" means the candidate demonstrated some understanding but had
+  meaningful gaps or lacked depth.
+- "Needs Improvement" means the candidate showed little understanding,
+  gave incorrect answers, or provided insufficient evidence.
+- Keep the evidence specific and concise.
+- The improvement should explain what the candidate should strengthen,
+  not simply repeat the assessment.
+- Prefer approximately 3 to 6 major topics for a completed interview.
 `;
 
+  try {
   const response = await groq.chat.completions.create({
     model: MODEL,
     messages: [
@@ -465,6 +873,19 @@ Rules:
   });
 
   return response.choices[0].message.content.trim();
+
+} catch (error) {
+
+  if (isRateLimitError(error)) {
+    console.warn(
+      "Groq rate limit/quota reached. Using fallback feedback."
+    );
+
+    return getFallbackFeedback(history, context);
+  }
+
+  throw error;
+}
 }
 
 module.exports = {

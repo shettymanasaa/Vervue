@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/", (req, res) => {
-    res.send("AI Interview Agent API is running");
+    res.send("Vervue API is running");
 });
 
 app.use("/api/interview", interviewRoutes);
