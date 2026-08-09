@@ -1,1 +1,7 @@
-GET http://localhost:5000/api/candidates
+POST http://localhost:5000/api/interview
+Content-Type: application/json
+
+{
+  "sessionId": "curriculum-test-003",
+  "candidateId": "CAND-001"
+}

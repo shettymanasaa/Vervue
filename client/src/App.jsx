@@ -19,6 +19,10 @@ function App() {
   const [question, setQuestion] = useState("");
   const [loadingQuestion, setLoadingQuestion] = useState(false);
   const [answer, setAnswer] = useState("");
+  const [submittingAnswer, setSubmittingAnswer] = useState(false);
+const [questionNumber, setQuestionNumber] = useState(1);
+const [feedback, setFeedback] = useState(null);
+  const TOTAL_QUESTIONS = 10;
 
   useEffect(() => {
     const root = document.documentElement;
@@ -70,10 +74,12 @@ function App() {
     const newSessionId = `session-${Date.now()}`;
 
     setSessionId(newSessionId);
-    setLoadingQuestion(true);
-    setError("");
-    setQuestion("");
-    setAnswer("");
+setLoadingQuestion(true);
+setError("");
+setQuestion("");
+setAnswer("");
+setQuestionNumber(1);
+setFeedback(null);
 
     try {
       const response = await fetch(`${API_URL}/api/interview`, {
@@ -101,6 +107,52 @@ function App() {
       setLoadingQuestion(false);
     }
   };
+  const submitAnswer = async () => {
+  if (!answer.trim() || !sessionId || submittingAnswer) {
+    return;
+  }
+
+  setSubmittingAnswer(true);
+  setError("");
+
+  try {
+    const response = await fetch(`${API_URL}/api/interview`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sessionId,
+        message: answer.trim(),
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to submit answer");
+    }
+
+    if (data.done) {
+      setFeedback(data.feedback);
+      setPage("feedback");
+      setAnswer("");
+      return;
+    }
+
+    setQuestion(data.reply);
+setAnswer("");
+setQuestionNumber((prev) => prev + 1);
+setFeedback(null);
+  } catch (error) {
+    console.error(error);
+    setError(
+      error.message || "Unable to submit your answer. Please try again."
+    );
+  } finally {
+    setSubmittingAnswer(false);
+  }
+};
 
   const filteredCandidates = candidates.filter((candidate) => {
     const search = searchTerm.toLowerCase().trim();
@@ -301,14 +353,17 @@ function App() {
                 setQuestion("");
                 setAnswer("");
                 setError("");
+                setQuestionNumber(1);
+setFeedback(null);
+setSessionId(null);
               }}
             >
               ← Exit Interview
             </button>
 
             <span className="question-count">
-              Question 1 of 6
-            </span>
+  Question {questionNumber} of {TOTAL_QUESTIONS}
+</span>
           </div>
 
           <div className="interview-layout">
@@ -336,12 +391,19 @@ function App() {
               <div className="progress-section">
                 <div className="progress-label">
                   <span>Interview Progress</span>
-                  <span>1 / 6</span>
+                <span>
+  {questionNumber} / {TOTAL_QUESTIONS}
+</span>
                 </div>
 
                 <div className="progress-bar">
-                  <div className="progress-fill"></div>
-                </div>
+  <div
+    className="progress-fill"
+    style={{
+      width: `${(questionNumber / TOTAL_QUESTIONS) * 100}%`,
+    }}
+  ></div>
+</div>
               </div>
 
               <div className="question-section">
@@ -372,12 +434,117 @@ function App() {
                 />
 
                 <div className="answer-actions">
-                  <button className="primary-button">
-                    Submit Answer
-                  </button>
+                  <button
+  className="primary-button"
+  onClick={submitAnswer}
+  disabled={submittingAnswer || !answer.trim()}
+>
+  {submittingAnswer ? "Submitting..." : "Submit Answer"}
+</button>
                 </div>
               </div>
             </section>
+          </div>
+        </main>
+      )}
+            {/* FEEDBACK SCREEN */}
+      {page === "feedback" && feedback && selectedCandidate && (
+        <main className="feedback-page">
+          <div className="feedback-header">
+            <p className="eyebrow">INTERVIEW COMPLETE</p>
+
+            <h1>Interview Feedback</h1>
+
+            <p className="page-description">
+              Here's the AI-generated assessment of {selectedCandidate.member.name}'s
+              interview performance.
+            </p>
+          </div>
+
+          {/* SUMMARY */}
+          <section className="feedback-section">
+            <h2>Overall Summary</h2>
+            <p>{feedback.summary}</p>
+          </section>
+
+          {/* STRENGTHS */}
+          <section className="feedback-section">
+            <h2>Strengths</h2>
+
+            {feedback.strengths?.length > 0 ? (
+              <ul className="feedback-list">
+                {feedback.strengths.map((strength, index) => (
+                  <li key={index}>{strength}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>No strengths recorded.</p>
+            )}
+          </section>
+
+          {/* GAPS */}
+          <section className="feedback-section">
+            <h2>Areas for Improvement</h2>
+
+            {feedback.gaps?.length > 0 ? (
+              <ul className="feedback-list">
+                {feedback.gaps.map((gap, index) => (
+                  <li key={index}>{gap}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>No major gaps recorded.</p>
+            )}
+          </section>
+
+          {/* NEXT STEPS */}
+          <section className="feedback-section">
+            <h2>Recommended Next Steps</h2>
+
+            {feedback.next?.length > 0 ? (
+              <ul className="feedback-list">
+                {feedback.next.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>No additional recommendations.</p>
+            )}
+          </section>
+
+          {/* ACTIONS */}
+          <div className="feedback-actions">
+            <button
+              className="primary-button"
+              onClick={() => {
+                setPage("candidates");
+                setSelectedCandidate(null);
+                setSessionId(null);
+                setQuestion("");
+                setAnswer("");
+                setFeedback(null);
+                setQuestionNumber(1);
+                setError("");
+              }}
+            >
+              Start Another Interview
+            </button>
+
+            <button
+              className="secondary-button"
+              onClick={() => {
+                setPage("home");
+                setSelectedCandidate(null);
+                setSessionId(null);
+                setQuestion("");
+                setAnswer("");
+                setFeedback(null);
+                setQuestionNumber(1);
+                setError("");
+              }}
+            >
+              Back to Home
+            </button>
           </div>
         </main>
       )}

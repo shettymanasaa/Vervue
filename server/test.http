@@ -2,6 +2,6 @@ POST http://localhost:5000/api/interview
 Content-Type: application/json
 
 {
-    "sessionId": "session-1",
-    "candidateId": "CAND-001"
+  "sessionId": "quota-check-001",
+  "message": "I would maintain a versioned shared context object with a unique version for each update. Agents would read the latest valid version and use optimistic concurrency control so that conflicting updates can be detected rather than silently overwriting newer data. The orchestrator could validate versions before committing updates and reject or retry stale writes. I would keep sensitive information scoped to only the agents that need it, integrate retrieval and compliance results through controlled context fields, and use efficient caching and lightweight context updates to maintain low latency."
 }
