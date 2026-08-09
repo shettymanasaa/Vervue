@@ -1064,3 +1064,15 @@ color: var(--accent);
     padding: 80px 20px;
   }
 }
+.feedback-meta-item {
+  display: block !important;
+}
+
+.feedback-meta-item .feedback-meta-label {
+  display: block !important;
+  margin-bottom: 6px;
+}
+
+.feedback-meta-item strong {
+  display: block !important;
+}
