@@ -5,6 +5,79 @@ const groq = new Groq({
 });
 
 const MODEL = "openai/gpt-oss-120b";
+async function selectRoleRelevantMissions(context, missions = []) {
+  if (!missions.length) return [];
+
+  const missionList = missions
+    .map(
+      (mission, index) =>
+        `${index + 1}. Day ${mission.day}: ${mission.title}\nObjectives: ${(mission.objectives || []).join("; ")}`
+    )
+    .join("\n\n");
+
+  const prompt = `
+You are selecting interview topics for a technical interview.
+
+Candidate role:
+${context.candidate.jobRole}
+
+Candidate experience:
+${context.candidate.yearsExperience} years
+
+Completed curriculum missions:
+${missionList}
+
+Select the curriculum missions that are most relevant to this candidate's role.
+
+IMPORTANT:
+- Only select missions from the list provided.
+- Do not invent new topics.
+- Relevance to the candidate's role is more important than the original curriculum order.
+- Prefer topics that allow meaningful evaluation for this specific role.
+- Return exactly 5 mission numbers when at least 5 are available.
+- If fewer than 5 missions are available, return all relevant missions.
+- Return JSON only.
+
+Format:
+{
+  "selectedMissionNumbers": [1, 4, 7, 3, 5]
+}
+`;
+
+  try {
+    const response = await groq.chat.completions.create({
+      model: MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You select role-relevant interview topics. Return only valid JSON.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      response_format: {
+        type: "json_object",
+      },
+    });
+
+    const result = JSON.parse(
+      response.choices[0].message.content.trim()
+    );
+
+    const selected = (result.selectedMissionNumbers || [])
+      .map((number) => missions[number - 1])
+      .filter(Boolean);
+
+    return selected.length ? selected : missions.slice(0, 5);
+  } catch (error) {
+    console.error("❌ ROLE TOPIC SELECTION ERROR:", error);
+
+    return missions.slice(0, 5);
+  }
+}
 
 function isRateLimitError(error) {
   const status = Number(
@@ -32,27 +105,114 @@ function isRateLimitError(error) {
 }
 
     
-function getFallbackQuestion(context, questionNumber, targetMission) {
+function getFallbackQuestion(context, questionNumber, targetMission ,history = []) {
   const topic =
     targetMission?.title || "the technical area relevant to this role";
 
   const role =
     context?.candidate?.jobRole || "this role";
 
-  const fallbacks = {
-    1: `For a ${role} working with ${topic}, how would you approach the problem from the beginning, and what would you consider first?`,
-    2: `What are the most important technical concepts you would consider when working with ${topic}?`,
-    3: `Suppose you had to implement ${topic} in a real project. What approach would you take and why?`,
-    4: `What trade-offs would you consider when designing a solution involving ${topic}?`,
-    5: `What could go wrong when implementing ${topic}, and how would you identify and fix the problem?`,
-    6: `How would you make a ${topic}-based solution more robust for a real-world use case?`,
-    7: `If your implementation involving ${topic} started producing unexpected results, how would you debug it?`,
-    8: `How would you design ${topic} so that it can handle increasing scale while keeping the system reliable?`,
-    9: `What reliability or production concerns would you consider before deploying a solution involving ${topic}?`,
-    10: `If you were taking this solution into production, what would be the most important technical improvement you would prioritize, and why?`
-  };
+  const roleText = role.toLowerCase();
+  const previousAnswer =
+  history.length > 0
+    ? history[history.length - 1].answer?.trim() || ""
+    : "";
+    const answerText = previousAnswer.toLowerCase();
 
-  return fallbacks[questionNumber] || fallbacks[9];
+const answerIsWeak =
+  !previousAnswer ||
+  previousAnswer.length < 25 ||
+  answerText.includes("i don't know") ||
+  answerText.includes("idk") ||
+  answerText.includes("not sure") ||
+  answerText.includes("no idea") ||
+  answerText === "okay" ||
+  answerText === "what";
+  
+
+const roleQuestions = {
+  
+  "business analyst": [
+    `For ${topic}, what business problem would you try to solve first, and what information would you need from stakeholders?`,
+    `What factors would you consider when evaluating whether ${topic} is actually useful for a business process?`,
+    `How would you translate a business requirement into a solution involving ${topic}?`,
+    `What trade-offs would you discuss with stakeholders when deciding whether to use ${topic}?`,
+    `If a ${topic}-based solution produced poor results, how would you determine whether the issue was with the data, requirements, or implementation?`,
+    `How would you validate that a ${topic}-based solution is delivering the expected business outcome?`,
+    `If the results from ${topic} were unexpected, how would you investigate the issue with both technical and business teams?`,
+    `How would you make a ${topic}-based solution scalable while keeping it useful for business users?`,
+    `What reliability, data-quality, security, or monitoring concerns would you consider before using ${topic} in production?`,
+    `If you could improve one part of the ${topic}-based solution before production, what would you prioritize and why?`
+  ],
+
+  "data engineer": [
+    `How would you approach designing a data pipeline that supports ${topic}, and what would you consider first?`,
+    `What data storage, processing, or indexing concepts are important when working with ${topic}?`,
+    `How would you implement ${topic} as part of a production data pipeline?`,
+    `What trade-offs would you consider around storage, latency, accuracy, and processing cost when using ${topic}?`,
+    `What could go wrong in a ${topic}-based data pipeline, and how would you troubleshoot it?`,
+    `How would you make a ${topic}-based data pipeline more robust and maintainable?`,
+    `If the output of a ${topic} pipeline became inconsistent, how would you debug it?`,
+    `How would you design the ${topic} pipeline to handle increasing data volume reliably?`,
+    `What production concerns such as monitoring, data quality, failures, or recovery would you consider for ${topic}?`,
+    `What technical improvement would you prioritize before taking the ${topic} pipeline into production, and why?`
+  ],
+
+  "backend software engineer": [
+    `How would you approach integrating ${topic} into a backend system, and what would you consider first?`,
+    `What backend concepts are most important when building a service around ${topic}?`,
+    `How would you implement ${topic} as part of a real backend application?`,
+    `What trade-offs would you consider around latency, reliability, cost, and complexity when using ${topic}?`,
+    `What could go wrong when integrating ${topic} into a backend API, and how would you troubleshoot it?`,
+    `How would you make a backend service using ${topic} more robust for production?`,
+    `If a service using ${topic} started returning unexpected results, how would you debug it?`,
+    `How would you design a backend system using ${topic} to handle increasing traffic while remaining reliable?`,
+    `What security, monitoring, failure-handling, and deployment concerns would you consider before putting ${topic} into production?`,
+    `What would be the most important technical improvement you would make before deploying the ${topic}-based system, and why?`
+  ],
+
+  "software engineer": [
+    `How would you approach implementing ${topic} in a software project, and what would you consider first?`,
+    `What core technical concepts would you consider when working with ${topic}?`,
+    `How would you structure a real-world implementation of ${topic}?`,
+    `What trade-offs would you consider when choosing an approach for ${topic}?`,
+    `What could go wrong while implementing ${topic}, and how would you identify the cause?`,
+    `How would you make a solution involving ${topic} more robust for real-world use?`,
+    `How would you debug unexpected behavior in an implementation involving ${topic}?`,
+    `How would you design ${topic} to handle increasing scale while maintaining reliability?`,
+    `What production concerns would you consider before deploying a solution involving ${topic}?`,
+    `What technical improvement would you prioritize before taking ${topic} into production, and why?`
+  ],
+
+  "ai engineer": [
+    `How would you approach using ${topic} in an AI system, and what would you consider first?`,
+    `What technical concepts are most important when working with ${topic} in an AI application?`,
+    `How would you implement ${topic} in a real AI project?`,
+    `What trade-offs would you consider around accuracy, latency, cost, and model behavior when using ${topic}?`,
+    `What could go wrong when implementing ${topic} in an AI system, and how would you troubleshoot it?`,
+    `How would you make an AI solution involving ${topic} more robust for real-world use?`,
+    `If an AI system using ${topic} started producing unexpected results, how would you debug it?`,
+    `How would you design a ${topic}-based AI system to scale while remaining reliable?`,
+    `What monitoring, security, evaluation, and reliability concerns would you consider before deploying ${topic}?`,
+    `What technical improvement would you prioritize before taking the ${topic}-based AI system into production, and why?`
+  ]
+};
+let selectedQuestions = roleQuestions["software engineer"];
+
+if (roleText.includes("business analyst")) {
+  selectedQuestions = roleQuestions["business analyst"];
+} else if (roleText.includes("data engineer")) {
+  selectedQuestions = roleQuestions["data engineer"];
+} else if (roleText.includes("backend software engineer")) {
+  selectedQuestions = roleQuestions["backend software engineer"];
+} else if (roleText.includes("ai engineer")) {
+  selectedQuestions = roleQuestions["ai engineer"];
+}
+
+ return (
+  selectedQuestions[questionNumber - 1] ||
+  selectedQuestions[selectedQuestions.length - 1]
+);
 }
 
 function getFallbackFeedback(history = [], context = {}) {
@@ -772,7 +932,8 @@ return generatedQuestion;
   return getFallbackQuestion(
     context,
     questionNumber,
-    targetMission
+    targetMission,
+     history
   );
 }
 }
@@ -891,4 +1052,5 @@ Rules:
 module.exports = {
   generateInterviewQuestion,
   generateInterviewFeedback,
+  selectRoleRelevantMissions,
 };

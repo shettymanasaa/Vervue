@@ -1,6 +1,7 @@
 const {
   generateInterviewQuestion,
   generateInterviewFeedback,
+  selectRoleRelevantMissions,
 } = require("../services/geminiService");
 const { getCandidateById } = require("../services/candidateService");
 const { getCurriculum } = require("../services/curriculumService");
@@ -74,9 +75,15 @@ const handleInterview = async (req, res) => {
             "Candidate does not have at least 4 completed curriculum days",
         });
       }
+// Select curriculum topics most relevant to the candidate's role
+const selectedCurriculumDays = await selectRoleRelevantMissions(
+  context,
+  curriculumDays
+);
 
-      // Q1 targets the first curriculum day
-      const firstTargetMission = curriculumDays[0];
+
+    
+const firstTargetMission = selectedCurriculumDays[0];
 
       const question = await generateInterviewQuestion(
         context,
@@ -93,7 +100,7 @@ const handleInterview = async (req, res) => {
         questionNumber: 1,
         currentQuestion: question,
         history: [],
-        curriculumDays,
+        curriculumDays: selectedCurriculumDays,
         coveredDays: [firstTargetMission.day],
         // Interview timing
   startedAt: new Date().toISOString(),

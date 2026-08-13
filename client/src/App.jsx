@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import "./App.css";
-const API_URL = "https://vervue-api.vercel.app";
+const API_URL = "http://localhost:5000";
 
 function App() {
   const [theme, setTheme] = useState(
@@ -491,30 +491,7 @@ const formatInterviewDate = (dateString) => {
               onChange={(event) => setSearchTerm(event.target.value)}
             />
 
-            {/* Selected candidate action */}
-            {selectedCandidate && (
-              <div className="selected-candidate-action">
-                <div>
-                  <span className="selected-candidate-label">
-                    SELECTED CANDIDATE
-                  </span>
-
-                  <strong>{selectedCandidate.member.name}</strong>
-
-                  <span>{selectedCandidate.member.jobRole}</span>
-                </div>
-
-                <button
-                  className="primary-button"
-                  onClick={() => {
-                    setPage("interview");
-                    startInterview();
-                  }}
-                >
-                  Continue with {selectedCandidate.member.name}
-                </button>
-              </div>
-            )}
+           
           </div>
 
           {loadingCandidates && (
@@ -568,18 +545,23 @@ const formatInterviewDate = (dateString) => {
                           <span>{member.education}</span>
                         </div>
 
-                        <button
-                          className={
-                            isSelected
-                              ? "secondary-button"
-                              : "primary-button card-button"
-                          }
-                          onClick={() => selectCandidate(candidate)}
-                        >
-                          {isSelected
-                            ? "Selected"
-                            : "Select Candidate"}
-                        </button>
+                       <button
+  className={
+    isSelected
+      ? "primary-button card-button"
+      : "primary-button card-button"
+  }
+  onClick={() => {
+    if (isSelected) {
+      setPage("interview");
+      startInterview();
+    } else {
+      selectCandidate(candidate);
+    }
+  }}
+>
+  {isSelected ? "Start Interview →" : "Select Candidate"}
+</button>
                       </div>
                     );
                   })}
